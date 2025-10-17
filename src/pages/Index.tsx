@@ -27,7 +27,7 @@ interface Transfer {
   stationIds: [string, string];
 }
 
-const METRO_COLORS = [
+const DEFAULT_METRO_COLORS = [
   '#EF4444', '#F97316', '#F59E0B', '#EAB308', '#84CC16',
   '#22C55E', '#10B981', '#14B8A6', '#06B6D4', '#0EA5E9',
   '#3B82F6', '#6366F1', '#8B5CF6', '#A855F7', '#D946EF',
@@ -41,9 +41,12 @@ const Index = () => {
   const [selectedTool, setSelectedTool] = useState<'line' | 'station' | 'transfer' | null>(null);
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
   const [newLineName, setNewLineName] = useState('');
-  const [newLineColor, setNewLineColor] = useState(METRO_COLORS[0]);
+  const [customColors, setCustomColors] = useState<string[]>(DEFAULT_METRO_COLORS);
+  const [newLineColor, setNewLineColor] = useState(DEFAULT_METRO_COLORS[0]);
   const [newStationName, setNewStationName] = useState('');
   const [selectedStationForTransfer, setSelectedStationForTransfer] = useState<string | null>(null);
+  const [customColorInput, setCustomColorInput] = useState('#000000');
+  const [draggingStation, setDraggingStation] = useState<string | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -53,13 +56,14 @@ const Index = () => {
       setLines(data.lines || []);
       setStations(data.stations || []);
       setTransfers(data.transfers || []);
+      setCustomColors(data.customColors || DEFAULT_METRO_COLORS);
     }
   }, []);
 
   useEffect(() => {
-    const data = { lines, stations, transfers };
+    const data = { lines, stations, transfers, customColors };
     localStorage.setItem('metro-scheme', JSON.stringify(data));
-  }, [lines, stations, transfers]);
+  }, [lines, stations, transfers, customColors]);
 
   const createLine = () => {
     if (!newLineName.trim()) {
@@ -133,6 +137,44 @@ const Index = () => {
     toast.success('Схема очищена');
   };
 
+  const addCustomColor = () => {
+    if (!customColors.includes(customColorInput)) {
+      setCustomColors([...customColors, customColorInput]);
+      setNewLineColor(customColorInput);
+      toast.success('Цвет добавлен в палитру');
+    } else {
+      toast.error('Этот цвет уже есть в палитре');
+    }
+  };
+
+  const handleStationMouseDown = (stationId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (selectedTool === 'transfer') {
+      handleStationClick(stationId, e);
+    } else {
+      setDraggingStation(stationId);
+    }
+  };
+
+  const handleStationMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!draggingStation || !canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    setStations(stations.map(station =>
+      station.id === draggingStation
+        ? { ...station, x, y }
+        : station
+    ));
+  };
+
+  const handleStationMouseUp = () => {
+    if (draggingStation) {
+      setDraggingStation(null);
+    }
+  };
+
   const getLineById = (id: string) => lines.find(l => l.id === id);
   const getStationById = (id: string) => stations.find(s => s.id === id);
 
@@ -161,7 +203,7 @@ const Index = () => {
             <div>
               <Label>Цвет</Label>
               <div className="flex flex-wrap gap-2 mt-2">
-                {METRO_COLORS.map(color => (
+                {customColors.map(color => (
                   <button
                     key={color}
                     onClick={() => setNewLineColor(color)}
@@ -171,6 +213,18 @@ const Index = () => {
                     style={{ backgroundColor: color }}
                   />
                 ))}
+              </div>
+              <div className="flex gap-2 mt-3">
+                <Input
+                  type="color"
+                  value={customColorInput}
+                  onChange={(e) => setCustomColorInput(e.target.value)}
+                  className="w-16 h-10 p-1 cursor-pointer"
+                />
+                <Button onClick={addCustomColor} variant="outline" size="sm" className="flex-1">
+                  <Icon name="Plus" size={14} className="mr-1" />
+                  Добавить цвет
+                </Button>
               </div>
             </div>
             <Button onClick={createLine} className="w-full">
@@ -253,6 +307,8 @@ const Index = () => {
         <div
           ref={canvasRef}
           onClick={handleCanvasClick}
+          onMouseMove={handleStationMouseMove}
+          onMouseUp={handleStationMouseUp}
           className="w-full h-full relative cursor-crosshair"
           style={{ minHeight: '100vh' }}
         >
@@ -302,8 +358,8 @@ const Index = () => {
             return (
               <div
                 key={station.id}
-                onClick={(e) => handleStationClick(station.id, e)}
-                className="absolute metro-station pointer-events-auto"
+                onMouseDown={(e) => handleStationMouseDown(station.id, e)}
+                className="absolute metro-station pointer-events-auto cursor-move"
                 style={{
                   left: station.x - 8,
                   top: station.y - 8,
